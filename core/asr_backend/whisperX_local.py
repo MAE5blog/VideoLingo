@@ -1,4 +1,5 @@
 import os
+import glob
 import warnings
 import time
 import subprocess
@@ -66,6 +67,27 @@ def _ensure_numpy_compat():
 def _is_ct2_model_dir(model_path):
     return os.path.isdir(model_path) and os.path.isfile(os.path.join(model_path, "model.bin"))
 
+def _has_hf_weights(snapshot_dir):
+    patterns = ("*.safetensors", "*.bin", "*.index.json")
+    for pattern in patterns:
+        if glob.glob(os.path.join(snapshot_dir, pattern)):
+            return True
+    return False
+
+def _ensure_hf_weights(repo_id, snapshot_dir, cache_dir):
+    if _has_hf_weights(snapshot_dir):
+        return
+    try:
+        from huggingface_hub import snapshot_download
+    except Exception:
+        return
+    snapshot_download(
+        repo_id=repo_id,
+        revision=os.path.basename(snapshot_dir),
+        cache_dir=cache_dir,
+        allow_patterns=["*.safetensors", "*.bin", "*.index.json"],
+    )
+
 def _find_hf_snapshot(model_dir, repo_id):
     safe_repo = repo_id.replace("/", "--")
     base_dir = os.path.join(model_dir, f"models--{safe_repo}", "snapshots")
@@ -110,6 +132,9 @@ def _ensure_ct2_model(model_name, model_dir, quantization):
     if "/" in model_name:
         snapshot = _find_hf_snapshot(model_dir, model_name)
         if snapshot:
+            if _is_ct2_model_dir(snapshot):
+                return snapshot
+            _ensure_hf_weights(model_name, snapshot, model_dir)
             source_model = snapshot
     _convert_to_ct2(source_model, ct2_dir, quantization)
     return ct2_dir
