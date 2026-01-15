@@ -19,6 +19,8 @@ def _ensure_torchaudio_backend():
             torchaudio.set_audio_backend = _noop_backend
         if not hasattr(torchaudio, "get_audio_backend"):
             torchaudio.get_audio_backend = lambda: "soundfile"
+        if not hasattr(torchaudio, "list_audio_backends"):
+            torchaudio.list_audio_backends = lambda: ["soundfile"]
     except Exception:
         return
 
