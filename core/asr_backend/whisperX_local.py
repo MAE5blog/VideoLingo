@@ -81,9 +81,12 @@ def _find_hf_snapshot(model_dir, repo_id):
     return max(snapshots, key=os.path.getmtime)
 
 def _convert_to_ct2(source_model, output_dir, quantization):
-    if os.path.isdir(output_dir) and not _is_ct2_model_dir(output_dir):
-        shutil.rmtree(output_dir)
-    os.makedirs(output_dir, exist_ok=True)
+    if os.path.exists(output_dir):
+        if os.path.isdir(output_dir):
+            shutil.rmtree(output_dir)
+        else:
+            os.remove(output_dir)
+    os.makedirs(os.path.dirname(output_dir), exist_ok=True)
     cmd = [
         "ct2-transformers-converter",
         "--model", source_model,
