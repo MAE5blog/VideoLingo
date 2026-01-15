@@ -117,7 +117,9 @@ def _convert_to_ct2(source_model, output_dir, quantization):
         "--copy_files", "tokenizer.json", "preprocessor_config.json",
     ]
     rprint(f"[yellow]⚙️ Converting Whisper model to CTranslate2:[/yellow] {' '.join(cmd)}")
-    subprocess.check_call(cmd)
+    env = os.environ.copy()
+    env.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+    subprocess.check_call(cmd, env=env)
 
 def _ensure_ct2_model(model_name, model_dir, quantization):
     if "/" not in model_name and not os.path.isdir(model_name):
