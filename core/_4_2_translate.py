@@ -3,7 +3,6 @@ import json
 import concurrent.futures
 from core.translate_lines import translate_lines
 from core._4_1_summarize import search_things_to_note_in_prompt
-from core._8_1_audio_task import check_len_then_trim
 from core._6_gen_sub import align_timestamp
 from core.utils import *
 from rich.console import Console
@@ -103,8 +102,19 @@ def translate_all():
         subtitle_output_configs = [('trans_subs_for_audio.srt', ['Translation'])]
         df_time = align_timestamp(df_text, df_translate, subtitle_output_configs, output_dir=None, for_display=False)
         console.print(df_time)
-        # apply check_len_then_trim to df_time['Translation'], only when duration > MIN_TRIM_DURATION.
-        df_time['Translation'] = df_time.apply(lambda x: check_len_then_trim(x['Translation'], x['duration']) if x['duration'] > load_key("min_trim_duration") else x['Translation'], axis=1)
+        # apply check_len_then_trim to df_time['Translation'] only when enabled.
+        try:
+            enable_audio_trim = bool(load_key("enable_audio_trim"))
+        except KeyError:
+            enable_audio_trim = True
+        if enable_audio_trim:
+            from core._8_1_audio_task import check_len_then_trim
+            df_time['Translation'] = df_time.apply(
+                lambda x: check_len_then_trim(x['Translation'], x['duration'])
+                if x['duration'] > load_key("min_trim_duration")
+                else x['Translation'],
+                axis=1,
+            )
         console.print(df_time)
 
         df_time.to_excel(_4_2_TRANSLATION, index=False)

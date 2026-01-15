@@ -1,4 +1,5 @@
 import os
+import gc
 import glob
 import warnings
 import time
@@ -112,18 +113,40 @@ def _convert_to_ct2(source_model, output_dir, quantization):
         else:
             os.remove(output_dir)
     os.makedirs(os.path.dirname(output_dir), exist_ok=True)
+    copy_files = []
+    if os.path.isdir(source_model):
+        for fname in ("tokenizer.json", "preprocessor_config.json"):
+            if os.path.exists(os.path.join(source_model, fname)):
+                copy_files.append(fname)
+    else:
+        copy_files = ["tokenizer.json"]
     cmd = [
         "ct2-transformers-converter",
         "--model", source_model,
         "--output_dir", output_dir,
         "--force",
         "--quantization", quantization,
-        "--copy_files", "tokenizer.json", "preprocessor_config.json",
     ]
+    if copy_files:
+        cmd += ["--copy_files", *copy_files]
     rprint(f"[yellow]⚙️ Converting Whisper model to CTranslate2:[/yellow] {' '.join(cmd)}")
     env = os.environ.copy()
     env.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
-    subprocess.check_call(cmd, env=env)
+    try:
+        subprocess.check_call(cmd, env=env)
+    except subprocess.CalledProcessError:
+        if copy_files:
+            rprint("[yellow]⚠️ CTranslate2 conversion failed with copy_files, retrying without extra files...[/yellow]")
+            cmd = [
+                "ct2-transformers-converter",
+                "--model", source_model,
+                "--output_dir", output_dir,
+                "--force",
+                "--quantization", quantization,
+            ]
+            subprocess.check_call(cmd, env=env)
+        else:
+            raise
 
 def _ensure_ct2_model(model_name, model_dir, quantization):
     if "/" not in model_name and not os.path.isdir(model_name):
@@ -210,14 +233,44 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     asr_options = {"temperatures": [0],"initial_prompt": "",}
     whisper_language = None if 'auto' in WHISPER_LANGUAGE else WHISPER_LANGUAGE
     rprint("[bold yellow] You can ignore warning of `Model was trained with torch 1.10.0+cu102, yours is 2.0.0+cu118...`[/bold yellow]")
+    def _load_whisper_model(target_device, target_compute, target_ct2_quant):
+        try:
+            return whisperx_load_model(
+                model_name,
+                target_device,
+                compute_type=target_compute,
+                language=whisper_language,
+                vad_options=vad_options,
+                asr_options=asr_options,
+                download_root=MODEL_DIR,
+            )
+        except Exception as e:
+            if "model.bin" not in str(e):
+                raise
+            rprint("[yellow]⚠️ Missing model.bin, converting to CTranslate2 and retrying...[/yellow]")
+            ct2_model = _ensure_ct2_model(model_name, MODEL_DIR, target_ct2_quant)
+            return whisperx_load_model(
+                ct2_model,
+                target_device,
+                compute_type=target_compute,
+                language=whisper_language,
+                vad_options=vad_options,
+                asr_options=asr_options,
+                download_root=MODEL_DIR,
+            )
+
     try:
-        model = whisperx_load_model(model_name, device, compute_type=compute_type, language=whisper_language, vad_options=vad_options, asr_options=asr_options, download_root=MODEL_DIR)
+        model = _load_whisper_model(device, compute_type, ct2_quant)
     except Exception as e:
-        if "model.bin" not in str(e):
+        if device == "cuda" and ("libcudnn" in str(e) or "CUDA" in str(e)):
+            rprint("[yellow]⚠️ CUDA ASR load failed, falling back to CPU...[/yellow]")
+            device = "cpu"
+            batch_size = 1
+            compute_type = "int8"
+            ct2_quant = "int8"
+            model = _load_whisper_model(device, compute_type, ct2_quant)
+        else:
             raise
-        rprint("[yellow]⚠️ Missing model.bin, converting to CTranslate2 and retrying...[/yellow]")
-        ct2_model = _ensure_ct2_model(model_name, MODEL_DIR, ct2_quant)
-        model = whisperx_load_model(ct2_model, device, compute_type=compute_type, language=whisper_language, vad_options=vad_options, asr_options=asr_options, download_root=MODEL_DIR)
 
     def load_audio_segment(audio_file, start, end):
         audio, _ = librosa.load(audio_file, sr=16000, offset=start, duration=end - start, mono=True)
@@ -230,13 +283,31 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     # -------------------------
     transcribe_start_time = time.time()
     rprint("[bold green]Note: You will see Progress if working correctly ↓[/bold green]")
-    result = model.transcribe(raw_audio_segment, batch_size=batch_size, print_progress=True)
+    try:
+        result = model.transcribe(raw_audio_segment, batch_size=batch_size, print_progress=True)
+    except Exception as e:
+        if device == "cuda" and "libcudnn" in str(e):
+            rprint("[yellow]⚠️ CUDA inference failed, retrying on CPU...[/yellow]")
+            del model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+            device = "cpu"
+            batch_size = 1
+            compute_type = "int8"
+            ct2_quant = "int8"
+            model = _load_whisper_model(device, compute_type, ct2_quant)
+            result = model.transcribe(raw_audio_segment, batch_size=batch_size, print_progress=True)
+        else:
+            raise
     transcribe_time = time.time() - transcribe_start_time
     rprint(f"[cyan]⏱️ time transcribe:[/cyan] {transcribe_time:.2f}s")
 
     # Free GPU resources
     del model
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
     # Save language
     update_key("whisper.language", result['language'])
@@ -254,8 +325,10 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     rprint(f"[cyan]⏱️ time align:[/cyan] {align_time:.2f}s")
 
     # Free GPU resources again
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     del model_a
+    gc.collect()
 
     # Adjust timestamps
     for segment in result['segments']:

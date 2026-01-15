@@ -11,16 +11,22 @@ import shutil
 
 console = Console()
 
-def record_and_update_config(source_language, target_language):
+def record_and_update_config(source_language, target_language, enable_audio_trim=None):
     original_source_lang = load_key('whisper.language')
     original_target_lang = load_key('target_language')
+    try:
+        original_audio_trim = load_key('enable_audio_trim')
+    except KeyError:
+        original_audio_trim = None
     
     if source_language and not pd.isna(source_language):
         update_key('whisper.language', source_language)
     if target_language and not pd.isna(target_language):
         update_key('target_language', target_language)
+    if enable_audio_trim is not None and original_audio_trim is not None:
+        update_key('enable_audio_trim', bool(enable_audio_trim))
     
-    return original_source_lang, original_target_lang
+    return original_source_lang, original_target_lang, original_audio_trim
 
 def process_batch():
     if not check_settings():
@@ -67,19 +73,29 @@ def process_batch():
             source_language = row['Source Language']
             target_language = row['Target Language']
             
-            original_source_lang, original_target_lang = record_and_update_config(source_language, target_language)
-            
+            original_source_lang = None
+            original_target_lang = None
+            original_audio_trim = None
             try:
                 dubbing = 0 if pd.isna(row['Dubbing']) else int(row['Dubbing'])
                 is_retry = not pd.isna(row['Status']) and 'Error' in str(row['Status'])
+                original_source_lang, original_target_lang, original_audio_trim = record_and_update_config(
+                    source_language,
+                    target_language,
+                    enable_audio_trim=bool(dubbing),
+                )
                 status, error_step, error_message = process_video(video_file, dubbing, is_retry)
                 status_msg = "Done" if status else f"Error: {error_step} - {error_message}"
             except Exception as e:
                 status_msg = f"Error: Unhandled exception - {str(e)}"
                 console.print(f"[bold red]Error processing {video_file}: {status_msg}")
             finally:
-                update_key('whisper.language', original_source_lang)
-                update_key('target_language', original_target_lang)
+                if original_source_lang is not None:
+                    update_key('whisper.language', original_source_lang)
+                if original_target_lang is not None:
+                    update_key('target_language', original_target_lang)
+                if original_audio_trim is not None:
+                    update_key('enable_audio_trim', original_audio_trim)
                 
                 df.at[index, 'Status'] = status_msg
                 df.to_excel('batch/tasks_setting.xlsx', index=False)

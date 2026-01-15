@@ -89,6 +89,8 @@ reflect_translate: true
 pause_before_translate: false
 
 ## ======================== Dubbing Settings ======================== ##
+# Whether to trim subtitles for dubbing (skip to avoid TTS deps in subtitle-only mode)
+enable_audio_trim: false
 # TTS selection [sf_fish_tts, openai_tts, gpt_sovits, azure_tts, fish_tts, edge_tts, custom_tts]
 tts_method: 'edge_tts'
 

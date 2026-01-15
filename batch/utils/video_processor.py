@@ -1,4 +1,5 @@
 import os
+import gc
 import shutil
 from functools import partial
 
@@ -19,6 +20,15 @@ YTB_RESOLUTION_KEY = "ytb_resolution"
 def process_video(file, dubbing=False, is_retry=False):
     if not is_retry:
         prepare_output_folder(OUTPUT_DIR)
+
+    def _clear_cuda_cache():
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+        gc.collect()
 
     def _transcribe():
         from core import _2_asr
@@ -76,6 +86,7 @@ def process_video(file, dubbing=False, is_retry=False):
                 result = step_func()
                 if result is not None:
                     globals().update(result)
+                _clear_cuda_cache()
                 break
             except Exception as e:
                 if attempt == 2:
