@@ -2,6 +2,7 @@ import os
 import warnings
 import time
 import subprocess
+import shutil
 import torch
 import librosa
 from rich import print as rprint
@@ -62,6 +63,54 @@ def _ensure_numpy_compat():
     except Exception:
         return
 
+def _is_ct2_model_dir(model_path):
+    return os.path.isdir(model_path) and os.path.isfile(os.path.join(model_path, "model.bin"))
+
+def _find_hf_snapshot(model_dir, repo_id):
+    safe_repo = repo_id.replace("/", "--")
+    base_dir = os.path.join(model_dir, f"models--{safe_repo}", "snapshots")
+    if not os.path.isdir(base_dir):
+        return None
+    snapshots = [
+        os.path.join(base_dir, name)
+        for name in os.listdir(base_dir)
+        if os.path.isdir(os.path.join(base_dir, name))
+    ]
+    if not snapshots:
+        return None
+    return max(snapshots, key=os.path.getmtime)
+
+def _convert_to_ct2(source_model, output_dir, quantization):
+    if os.path.isdir(output_dir) and not _is_ct2_model_dir(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    cmd = [
+        "ct2-transformers-converter",
+        "--model", source_model,
+        "--output_dir", output_dir,
+        "--quantization", quantization,
+        "--copy_files", "tokenizer.json", "preprocessor_config.json",
+    ]
+    rprint(f"[yellow]⚙️ Converting Whisper model to CTranslate2:[/yellow] {' '.join(cmd)}")
+    subprocess.check_call(cmd)
+
+def _ensure_ct2_model(model_name, model_dir, quantization):
+    if "/" not in model_name and not os.path.isdir(model_name):
+        return model_name
+    if _is_ct2_model_dir(model_name):
+        return model_name
+    safe_name = model_name.replace("/", "--").replace(":", "--")
+    ct2_dir = os.path.join(model_dir, "ctranslate2", safe_name)
+    if _is_ct2_model_dir(ct2_dir):
+        return ct2_dir
+    source_model = model_name
+    if "/" in model_name:
+        snapshot = _find_hf_snapshot(model_dir, model_name)
+        if snapshot:
+            source_model = snapshot
+    _convert_to_ct2(source_model, ct2_dir, quantization)
+    return ct2_dir
+
 @except_handler("failed to check hf mirror", default_return=None)
 def check_hf_mirror():
     mirrors = {'Official': 'huggingface.co', 'Mirror': 'hf-mirror.com'}
@@ -108,6 +157,7 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
         compute_type = "int8"
         rprint(f"[cyan]📦 Batch size:[/cyan] {batch_size}, [cyan]⚙️ Compute type:[/cyan] {compute_type}")
     rprint(f"[green]▶️ Starting WhisperX for segment {start:.2f}s to {end:.2f}s...[/green]")
+    ct2_quant = "float16" if device == "cuda" else "int8"
     
     if WHISPER_LANGUAGE == 'zh':
         model_name = "Huan69/Belle-whisper-large-v3-zh-punct-fasterwhisper"
@@ -126,7 +176,14 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     asr_options = {"temperatures": [0],"initial_prompt": "",}
     whisper_language = None if 'auto' in WHISPER_LANGUAGE else WHISPER_LANGUAGE
     rprint("[bold yellow] You can ignore warning of `Model was trained with torch 1.10.0+cu102, yours is 2.0.0+cu118...`[/bold yellow]")
-    model = whisperx_load_model(model_name, device, compute_type=compute_type, language=whisper_language, vad_options=vad_options, asr_options=asr_options, download_root=MODEL_DIR)
+    try:
+        model = whisperx_load_model(model_name, device, compute_type=compute_type, language=whisper_language, vad_options=vad_options, asr_options=asr_options, download_root=MODEL_DIR)
+    except Exception as e:
+        if "model.bin" not in str(e):
+            raise
+        rprint("[yellow]⚠️ Missing model.bin, converting to CTranslate2 and retrying...[/yellow]")
+        ct2_model = _ensure_ct2_model(model_name, MODEL_DIR, ct2_quant)
+        model = whisperx_load_model(ct2_model, device, compute_type=compute_type, language=whisper_language, vad_options=vad_options, asr_options=asr_options, download_root=MODEL_DIR)
 
     def load_audio_segment(audio_file, start, end):
         audio, _ = librosa.load(audio_file, sr=16000, offset=start, duration=end - start, mono=True)
