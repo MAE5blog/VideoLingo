@@ -20,6 +20,14 @@ def _ensure_torchaudio_backend():
     except Exception:
         return
 
+def _ensure_numpy_compat():
+    try:
+        import numpy as np
+        if not hasattr(np, "NaN"):
+            np.NaN = np.nan
+    except Exception:
+        return
+
 @except_handler("failed to check hf mirror", default_return=None)
 def check_hf_mirror():
     mirrors = {'Official': 'huggingface.co', 'Mirror': 'hf-mirror.com'}
@@ -47,6 +55,7 @@ def check_hf_mirror():
 @except_handler("WhisperX processing error:")
 def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     _ensure_torchaudio_backend()
+    _ensure_numpy_compat()
     from whisperx.asr import load_model as whisperx_load_model
     from whisperx.alignment import load_align_model as whisperx_load_align_model
     from whisperx.alignment import align as whisperx_align

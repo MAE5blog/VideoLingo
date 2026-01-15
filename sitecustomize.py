@@ -8,3 +8,10 @@ try:
         torchaudio.set_audio_backend = _noop_backend
 except Exception:
     pass
+
+try:
+    import numpy as np
+    if not hasattr(np, "NaN"):
+        np.NaN = np.nan
+except Exception:
+    pass
