@@ -12,12 +12,23 @@ try:
         torchaudio.get_audio_backend = lambda: "soundfile"
     if not hasattr(torchaudio, "list_audio_backends"):
         torchaudio.list_audio_backends = lambda: ["soundfile"]
-    if "torchaudio.backend" not in sys.modules:
+
+    backend_mod = sys.modules.get("torchaudio.backend")
+    if backend_mod is None:
         backend_mod = types.ModuleType("torchaudio.backend")
-        backend_mod.set_audio_backend = torchaudio.set_audio_backend
-        backend_mod.get_audio_backend = torchaudio.get_audio_backend
-        backend_mod.list_audio_backends = torchaudio.list_audio_backends
         sys.modules["torchaudio.backend"] = backend_mod
+    if not hasattr(backend_mod, "__path__"):
+        backend_mod.__path__ = []
+    backend_mod.set_audio_backend = torchaudio.set_audio_backend
+    backend_mod.get_audio_backend = torchaudio.get_audio_backend
+    backend_mod.list_audio_backends = torchaudio.list_audio_backends
+
+    if "torchaudio.backend.common" not in sys.modules:
+        common_mod = types.ModuleType("torchaudio.backend.common")
+        common_mod.set_audio_backend = torchaudio.set_audio_backend
+        common_mod.get_audio_backend = torchaudio.get_audio_backend
+        common_mod.list_audio_backends = torchaudio.list_audio_backends
+        sys.modules["torchaudio.backend.common"] = common_mod
 except Exception:
     pass
 
