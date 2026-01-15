@@ -6,6 +6,8 @@ try:
             return None
 
         torchaudio.set_audio_backend = _noop_backend
+    if not hasattr(torchaudio, "get_audio_backend"):
+        torchaudio.get_audio_backend = lambda: "soundfile"
 except Exception:
     pass
 
