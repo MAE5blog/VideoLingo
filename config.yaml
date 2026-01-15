@@ -11,12 +11,12 @@ display_language: "zh-CN"
 
 # API settings
 api:
-  key: 'your-api-key'
-  base_url: 'https://yunwu.ai'
-  model: 'gpt-4.1-2025-04-14'
+  key: 'local'
+  base_url: 'http://127.0.0.1:8000'
+  model: 'Sakura-14B-Qwen3-v1.5'
   llm_support_json: false
 # *Number of LLM multi-threaded accesses, set to 1 if using local LLM
-max_workers: 4
+max_workers: 1
 
 # Language settings, written into the prompt, can be described in natural language
 target_language: '简体中文'
@@ -25,11 +25,11 @@ target_language: '简体中文'
 demucs: true
 
 whisper:
-  # ["large-v3", "large-v3-turbo"]. Note: for zh model will force to use Belle/large-v3
-  model: 'large-v3'
+  # ["large-v3", "large-v3-turbo"] or HF repo id. Note: for zh model will force to use Belle/large-v3
+  model: 'kotoba-tech/kotoba-whisper-v2.2'
   # Whisper specified recognition language ISO 639-1
-  language: 'en'
-  detected_language: 'en'
+  language: 'ja'
+  detected_language: 'ja'
   # Whisper running mode ["local", "cloud", "elevenlabs"]. Specifies where to run, cloud uses 302.ai API
   runtime: 'local'
   # 302.ai API key
@@ -58,7 +58,7 @@ subtitle:
   target_multiplier: 1.2
 
 # *Summary length, set low to 2k if using local LLM
-summary_length: 8000
+summary_length: 2000
 
 # *Maximum number of words for the first rough cut, below 18 will cut too finely affecting translation, above 22 is too long and will make subsequent subtitle splitting difficult to align
 max_split_length: 20
@@ -71,7 +71,7 @@ pause_before_translate: false
 
 ## ======================== Dubbing Settings ======================== ##
 # TTS selection [sf_fish_tts, openai_tts, gpt_sovits, azure_tts, fish_tts, edge_tts, custom_tts]
-tts_method: 'azure_tts'
+tts_method: 'edge_tts'
 
 # SiliconFlow FishTTS
 sf_fish_tts:
