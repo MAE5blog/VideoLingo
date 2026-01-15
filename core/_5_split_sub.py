@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 from core.utils import *
 from core.utils.models import *
+from core.utils.local_llm_server import local_llm_server
 console = Console()
 
 # ! You can modify your own weights here
@@ -94,36 +95,37 @@ def split_align_subs(src_lines: List[str], tr_lines: List[str]):
     return src_lines, tr_lines, remerged_tr_lines
 
 def split_for_sub_main():
-    console.print("[bold green]🚀 Start splitting subtitles...[/bold green]")
-    
-    df = pd.read_excel(_4_2_TRANSLATION)
-    src = df['Source'].tolist()
-    trans = df['Translation'].tolist()
-    
-    subtitle_set = load_key("subtitle")
-    MAX_SUB_LENGTH = subtitle_set["max_length"]
-    TARGET_SUB_MULTIPLIER = subtitle_set["target_multiplier"]
-    
-    for attempt in range(3):  # 多次切割
-        console.print(Panel(f"🔄 Split attempt {attempt + 1}", expand=False))
-        split_src, split_trans, remerged = split_align_subs(src.copy(), trans)
-        
-        # 检查是否所有字幕都符合长度要求
-        if all(len(src) <= MAX_SUB_LENGTH for src in split_src) and \
-           all(calc_len(tr) * TARGET_SUB_MULTIPLIER <= MAX_SUB_LENGTH for tr in split_trans):
-            break
-        
-        # 更新源数据继续下一轮分割
-        src, trans = split_src, split_trans
+    with local_llm_server("split_subtitles"):
+        console.print("[bold green]🚀 Start splitting subtitles...[/bold green]")
 
-    # 确保二者有相同的长度，防止报错
-    if len(src) > len(remerged):
-        remerged += [None] * (len(src) - len(remerged))
-    elif len(remerged) > len(src):
-        src += [None] * (len(remerged) - len(src))
-    
-    pd.DataFrame({'Source': split_src, 'Translation': split_trans}).to_excel(_5_SPLIT_SUB, index=False)
-    pd.DataFrame({'Source': src, 'Translation': remerged}).to_excel(_5_REMERGED, index=False)
+        df = pd.read_excel(_4_2_TRANSLATION)
+        src = df['Source'].tolist()
+        trans = df['Translation'].tolist()
+
+        subtitle_set = load_key("subtitle")
+        MAX_SUB_LENGTH = subtitle_set["max_length"]
+        TARGET_SUB_MULTIPLIER = subtitle_set["target_multiplier"]
+
+        for attempt in range(3):  # 多次切割
+            console.print(Panel(f"🔄 Split attempt {attempt + 1}", expand=False))
+            split_src, split_trans, remerged = split_align_subs(src.copy(), trans)
+
+            # 检查是否所有字幕都符合长度要求
+            if all(len(src) <= MAX_SUB_LENGTH for src in split_src) and \
+               all(calc_len(tr) * TARGET_SUB_MULTIPLIER <= MAX_SUB_LENGTH for tr in split_trans):
+                break
+
+            # 更新源数据继续下一轮分割
+            src, trans = split_src, split_trans
+
+        # 确保二者有相同的长度，防止报错
+        if len(src) > len(remerged):
+            remerged += [None] * (len(src) - len(remerged))
+        elif len(remerged) > len(src):
+            src += [None] * (len(remerged) - len(src))
+
+        pd.DataFrame({'Source': split_src, 'Translation': split_trans}).to_excel(_5_SPLIT_SUB, index=False)
+        pd.DataFrame({'Source': src, 'Translation': remerged}).to_excel(_5_REMERGED, index=False)
 
 if __name__ == '__main__':
     split_for_sub_main()

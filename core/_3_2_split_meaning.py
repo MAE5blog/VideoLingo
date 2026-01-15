@@ -4,6 +4,7 @@ import math
 from core.prompts import get_split_prompt
 from core.spacy_utils.load_nlp_model import init_nlp
 from core.utils import *
+from core.utils.local_llm_server import local_llm_server
 from rich.console import Console
 from rich.table import Table
 from core.utils.models import _3_1_SPLIT_BY_NLP, _3_2_SPLIT_BY_MEANING
@@ -110,19 +111,20 @@ def parallel_split_sentences(sentences, max_length, max_workers, nlp, retry_atte
 @check_file_exists(_3_2_SPLIT_BY_MEANING)
 def split_sentences_by_meaning():
     """The main function to split sentences by meaning."""
-    # read input sentences
-    with open(_3_1_SPLIT_BY_NLP, 'r', encoding='utf-8') as f:
-        sentences = [line.strip() for line in f.readlines()]
+    with local_llm_server("split_by_meaning"):
+        # read input sentences
+        with open(_3_1_SPLIT_BY_NLP, 'r', encoding='utf-8') as f:
+            sentences = [line.strip() for line in f.readlines()]
 
-    nlp = init_nlp()
-    # 🔄 process sentences multiple times to ensure all are split
-    for retry_attempt in range(3):
-        sentences = parallel_split_sentences(sentences, max_length=load_key("max_split_length"), max_workers=load_key("max_workers"), nlp=nlp, retry_attempt=retry_attempt)
+        nlp = init_nlp()
+        # 🔄 process sentences multiple times to ensure all are split
+        for retry_attempt in range(3):
+            sentences = parallel_split_sentences(sentences, max_length=load_key("max_split_length"), max_workers=load_key("max_workers"), nlp=nlp, retry_attempt=retry_attempt)
 
-    # 💾 save results
-    with open(_3_2_SPLIT_BY_MEANING, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(sentences))
-    console.print('[green]✅ All sentences have been successfully split![/green]')
+        # 💾 save results
+        with open(_3_2_SPLIT_BY_MEANING, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(sentences))
+        console.print('[green]✅ All sentences have been successfully split![/green]')
 
 if __name__ == '__main__':
     # print(split_sentence('Which makes no sense to the... average guy who always pushes the character creation slider all the way to the right.', 2, 22))
