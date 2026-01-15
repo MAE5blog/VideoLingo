@@ -4,6 +4,9 @@ import warnings
 import time
 import subprocess
 import shutil
+
+os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+
 import torch
 import librosa
 from rich import print as rprint
