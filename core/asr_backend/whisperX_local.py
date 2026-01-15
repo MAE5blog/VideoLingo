@@ -3,13 +3,22 @@ import warnings
 import time
 import subprocess
 import torch
-import whisperx
 import librosa
 from rich import print as rprint
 from core.utils import *
 
 warnings.filterwarnings("ignore")
 MODEL_DIR = load_key("model_dir")
+
+def _ensure_torchaudio_backend():
+    try:
+        import torchaudio
+        if not hasattr(torchaudio, "set_audio_backend"):
+            def _noop_backend(_backend):
+                return None
+            torchaudio.set_audio_backend = _noop_backend
+    except Exception:
+        return
 
 @except_handler("failed to check hf mirror", default_return=None)
 def check_hf_mirror():
@@ -37,6 +46,8 @@ def check_hf_mirror():
 
 @except_handler("WhisperX processing error:")
 def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
+    _ensure_torchaudio_backend()
+    import whisperx
     os.environ['HF_ENDPOINT'] = check_hf_mirror()
     WHISPER_LANGUAGE = load_key("whisper.language")
     device = "cuda" if torch.cuda.is_available() else "cpu"
