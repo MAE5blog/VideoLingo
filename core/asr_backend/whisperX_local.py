@@ -116,6 +116,7 @@ def _convert_to_ct2(source_model, output_dir, quantization):
         "ct2-transformers-converter",
         "--model", source_model,
         "--output_dir", output_dir,
+        "--force",
         "--quantization", quantization,
         "--copy_files", "tokenizer.json", "preprocessor_config.json",
     ]
