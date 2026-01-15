@@ -47,7 +47,9 @@ def check_hf_mirror():
 @except_handler("WhisperX processing error:")
 def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     _ensure_torchaudio_backend()
-    import whisperx
+    from whisperx.asr import load_model as whisperx_load_model
+    from whisperx.alignment import load_align_model as whisperx_load_align_model
+    from whisperx.alignment import align as whisperx_align
     os.environ['HF_ENDPOINT'] = check_hf_mirror()
     WHISPER_LANGUAGE = load_key("whisper.language")
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -81,7 +83,7 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     asr_options = {"temperatures": [0],"initial_prompt": "",}
     whisper_language = None if 'auto' in WHISPER_LANGUAGE else WHISPER_LANGUAGE
     rprint("[bold yellow] You can ignore warning of `Model was trained with torch 1.10.0+cu102, yours is 2.0.0+cu118...`[/bold yellow]")
-    model = whisperx.load_model(model_name, device, compute_type=compute_type, language=whisper_language, vad_options=vad_options, asr_options=asr_options, download_root=MODEL_DIR)
+    model = whisperx_load_model(model_name, device, compute_type=compute_type, language=whisper_language, vad_options=vad_options, asr_options=asr_options, download_root=MODEL_DIR)
 
     def load_audio_segment(audio_file, start, end):
         audio, _ = librosa.load(audio_file, sr=16000, offset=start, duration=end - start, mono=True)
@@ -112,8 +114,8 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
     # -------------------------
     align_start_time = time.time()
     # Align timestamps using vocal audio
-    model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
-    result = whisperx.align(result["segments"], model_a, metadata, vocal_audio_segment, device, return_char_alignments=False)
+    model_a, metadata = whisperx_load_align_model(language_code=result["language"], device=device)
+    result = whisperx_align(result["segments"], model_a, metadata, vocal_audio_segment, device, return_char_alignments=False)
     align_time = time.time() - align_start_time
     rprint(f"[cyan]⏱️ time align:[/cyan] {align_time:.2f}s")
 
